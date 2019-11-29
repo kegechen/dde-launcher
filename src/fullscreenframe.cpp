@@ -344,6 +344,7 @@ bool FullScreenFrame::eventFilter(QObject *o, QEvent *e)
         }
     } else if ((o == m_appsArea->viewport() && e->type() == QEvent::Wheel)
                || (o == m_appsArea && e->type() == QEvent::Scroll)) {
+
         updateCurrentVisibleCategory();
         QMetaObject::invokeMethod(this, "refershCurrentFloatTitle", Qt::QueuedConnection);
     } else if (o == m_appsArea->viewport() && e->type() == QEvent::Resize) {
@@ -490,7 +491,7 @@ void FullScreenFrame::initUI()
     m_appsVbox->layout()->setSpacing(0);
     m_appsVbox->layout()->setContentsMargins(0, DLauncher::APPS_AREA_TOP_MARGIN,
                                              0, 0);
-
+    m_appsArea->addWidget(m_navigationWidget);
     m_appsArea->addWidget(m_allAppsView->viewport());
     m_appsArea->addWidget(m_internetTitle);
     m_appsArea->addWidget(m_internetView->viewport());
@@ -546,7 +547,7 @@ void FullScreenFrame::initUI()
     m_mainLayout->addSpacing(0);
     m_mainLayout->addWidget(m_topSpacing);
     m_mainLayout->addWidget(m_searchWidget);
-    m_mainLayout->addSpacing(20);
+    m_mainLayout->addWidget(m_navigationWidget);
     m_mainLayout->addWidget(m_appsArea);
     m_mainLayout->addWidget(m_bottomSpacing);
 
@@ -615,9 +616,6 @@ void FullScreenFrame::refershCategoryTextVisible()
     const QPoint pos = QCursor::pos() - this->pos();
     const bool shownAppList = m_navigationWidget->geometry().right() < pos.x();
 
-    // NOTE(hualet): don't show/hide category text with animation, it'll conflicts
-    // with the zoom animation causing very strange behavior;
-    m_navigationWidget->setCategoryTextVisible(!shownAppList/*, true*/);
     m_internetTitle->setTextVisible(shownAppList, true);
     m_chatTitle->setTextVisible(shownAppList, true);
     m_musicTitle->setTextVisible(shownAppList, true);
@@ -1248,9 +1246,8 @@ void FullScreenFrame::updateDockPosition()
     const int searchHeight = m_searchWidget->y() + m_searchWidget->height();
 
     // reset widgets size
-    const int besidePadding = m_calcUtil->calculateBesidePadding(width());
-    m_navigationWidget->setFixedWidth(besidePadding);
-    m_navigationWidget->setFixedHeight(height() - searchHeight);
+    m_navigationWidget->setFixedWidth(width());
+    m_navigationWidget->setFixedHeight(m_calcUtil->instance()->navigationHeight());
 
     const QRect dockGeometry = m_appsManager->dockGeometry();
 
