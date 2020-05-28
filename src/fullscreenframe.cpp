@@ -131,6 +131,13 @@ FullScreenFrame::FullScreenFrame(QWidget *parent) :
     , m_bottomSpacing(new QFrame)
     , m_contentFrame(new QFrame)
 {
+    //accessible.h中使用
+    m_topSpacing->setAccessibleName("topspacing");
+    m_bottomSpacing->setAccessibleName("BottomSpacing");
+    m_contentFrame->setAccessibleName("ContentFrame");
+    m_appsVbox->setAccessibleName("appvbox");
+    m_appItemDelegate->setObjectName("appItemDelegate");
+
     setFocusPolicy(Qt::ClickFocus);
     setAttribute(Qt::WA_InputMethodEnabled, true);
     m_nextFocusIndex = Applist;
@@ -154,7 +161,8 @@ FullScreenFrame::FullScreenFrame(QWidget *parent) :
 #endif
 
     setObjectName("LauncherFrame");
-
+    setAccessibleName("FullScrreenFrame");
+	
     installEventFilter(m_eventFilter);
 
     initUI();
@@ -214,7 +222,6 @@ void FullScreenFrame::showTips(const QString &tips)
         return;
 
     m_tipsLabel->setText(tips);
-
     const QPoint center = rect().center() - m_tipsLabel->rect().center();
     m_tipsLabel->move(center);
     m_tipsLabel->setVisible(true);
@@ -473,6 +480,7 @@ void FullScreenFrame::initUI()
     m_systemTitle->setTextVisible(false);
     m_othersTitle->setTextVisible(false);
 
+    m_appsArea->setAccessibleName("AppVbox");
     m_appsVbox->layout()->addWidget(m_allAppsView);
     m_appsVbox->layout()->addWidget(m_internetTitle);
     m_appsVbox->layout()->addWidget(m_internetView);
@@ -544,7 +552,7 @@ void FullScreenFrame::initUI()
     scrollVLayout->addLayout(scrollHLayout);
 
     m_contentFrame->setLayout(scrollVLayout);
-
+    m_contentFrame->setAccessibleName("ContentFrame");
     m_appsArea->setWidget(m_contentFrame);
 
     m_navigationWidget->show();
@@ -583,6 +591,7 @@ void FullScreenFrame::updateGradient()
     topCache.setDevicePixelRatio(ratio);
 
     m_topGradient->setPixmap(topCache);
+    m_topGradient->setAccessibleName("Imge-TopCache");
     m_topGradient->resize(topSize);
 
     m_topGradient->move(topLeft);
@@ -600,6 +609,7 @@ void FullScreenFrame::updateGradient()
     QPixmap bottomCache = cachePixmap().copy(bottomRect);
 
     m_bottomGradient->setPixmap(bottomCache);
+    m_bottomGradient->setAccessibleName("Image-BottomGradient");
     m_bottomGradient->resize(bottomSize);
     m_bottomGradient->move(QPoint(bottomPoint.x(), bottomPoint.y() + 1 * ratio - bottomSize.height()));
     m_bottomGradient->show();

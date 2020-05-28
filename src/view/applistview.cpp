@@ -51,7 +51,6 @@ AppListView::AppListView(QWidget *parent)
     viewport()->setAutoFillBackground(false);
     m_scrollAni->setEasingCurve(QEasingCurve::OutQuint);
     m_scrollAni->setDuration(800);
-
     horizontalScrollBar()->setEnabled(false);
     setFocusPolicy(Qt::NoFocus);
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -64,7 +63,7 @@ AppListView::AppListView(QWidget *parent)
     setMouseTracking(true);
     setFixedWidth(300);
     verticalScrollBar()->setContextMenuPolicy(Qt::NoContextMenu);
-
+    this->setAccessibleName("Form_AppList");
     // support drag and drop.
     setDragDropMode(QAbstractItemView::DragDrop);
     setMovement(QListView::Free);

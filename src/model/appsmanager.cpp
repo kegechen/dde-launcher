@@ -399,7 +399,6 @@ void AppsManager::saveUserSortedList()
     QByteArray writeBuf;
     QDataStream out(&writeBuf, QIODevice::WriteOnly);
     out << m_userSortedList;
-
     APP_USER_SORTED_LIST.setValue("list", writeBuf);
 }
 
@@ -485,7 +484,6 @@ void AppsManager::delayRefreshData()
 {
     // refresh new installed apps
     m_newInstalledAppsList = m_launcherInter->GetAllNewInstalledApps().value();
-
     generateCategoryMap();
     saveUserSortedList();
 
@@ -874,7 +872,6 @@ void AppsManager::searchDone(const QStringList &resultList)
 void AppsManager::handleItemChanged(const QString &operation, const ItemInfo &appInfo, qlonglong categoryNumber)
 {
     qDebug() << operation << appInfo << categoryNumber;
-
     if (operation == "created") {
         ItemInfo info = appInfo;
 
