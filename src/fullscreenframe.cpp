@@ -37,6 +37,8 @@
 #include <QGraphicsEffect>
 #include <QProcess>
 #include <DWindowManagerHelper>
+#include <DSearchEdit>
+#include <DFloatingButton>
 
 #include <ddialog.h>
 #include <QScroller>
@@ -130,6 +132,7 @@ FullScreenFrame::FullScreenFrame(QWidget *parent) :
     , m_topSpacing(new QFrame)
     , m_bottomSpacing(new QFrame)
     , m_contentFrame(new QFrame)
+    , m_displayInter(new DBusDisplay(this))
 {
     //accessible.h中使用
     m_topSpacing->setAccessibleName("topspacing");
@@ -264,9 +267,9 @@ void FullScreenFrame::keyPressEvent(QKeyEvent *e)
 
         // support Ctrl+V shortcuts.
         if (!clipboardText.isEmpty()) {
-            m_searchWidget->edit()->setText(clipboardText);
+            m_searchWidget->edit()->lineEdit()->setText(clipboardText);
             m_searchWidget->setFocus();
-            m_searchWidget->edit()->setFocus();
+            m_searchWidget->edit()->lineEdit()->setFocus();
         }
     }
 }
@@ -350,7 +353,7 @@ void FullScreenFrame::wheelEvent(QWheelEvent *e)
 bool FullScreenFrame::eventFilter(QObject *o, QEvent *e)
 {
     // we filter some key events from LineEdit, to implements cursor move.
-    if (o == m_searchWidget->edit() && e->type() == QEvent::KeyPress) {
+    if (o == m_searchWidget->edit()->lineEdit() && e->type() == QEvent::KeyPress) {
         QKeyEvent *keyPress = static_cast<QKeyEvent *>(e);
         if (keyPress->key() == Qt::Key_Left || keyPress->key() == Qt::Key_Right) {
             QKeyEvent *event = new QKeyEvent(keyPress->type(), keyPress->key(), keyPress->modifiers());
@@ -373,8 +376,8 @@ bool FullScreenFrame::eventFilter(QObject *o, QEvent *e)
 void FullScreenFrame::inputMethodEvent(QInputMethodEvent *e)
 {
     if (!e->commitString().isEmpty()) {
-        m_searchWidget->edit()->setText(e->commitString());
-        m_searchWidget->edit()->setFocus();
+        m_searchWidget->edit()->lineEdit()->setText(e->commitString());
+        m_searchWidget->edit()->lineEdit()->setFocus();
     }
 
     QWidget::inputMethodEvent(e);
@@ -386,7 +389,7 @@ QVariant FullScreenFrame::inputMethodQuery(Qt::InputMethodQuery prop) const
     case Qt::ImEnabled:
         return true;
     case Qt::ImCursorRectangle:
-        return widgetRelativeOffset(this, m_searchWidget->edit());
+        return widgetRelativeOffset(this, m_searchWidget->edit()->lineEdit());
     default:;
     }
 
@@ -423,11 +426,9 @@ void FullScreenFrame::initUI()
     m_appsArea->viewport()->installEventFilter(this);
     m_appsArea->installEventFilter(this);
 
-    //    m_othersView->installEventFilter(this);
-    //    m_navigationWidget->installEventFilter(this);
-    m_searchWidget->edit()->installEventFilter(m_eventFilter);
-    m_searchWidget->m_toggleCategoryBtn->installEventFilter(m_eventFilter);
-    //    qApp->installEventFilter(this);
+    m_searchWidget->edit()->lineEdit()->installEventFilter(m_eventFilter);
+    m_searchWidget->categoryBtn()->installEventFilter(m_eventFilter);
+
 
     m_allAppsView->setAccessibleName("all");
     m_allAppsView->setModel(m_allAppsModel);
@@ -746,6 +747,8 @@ void FullScreenFrame::initConnection()
 
     connect(qApp, &QApplication::primaryScreenChanged, this, &FullScreenFrame::updateGeometry);
     connect(qApp->primaryScreen(), &QScreen::geometryChanged, this, &FullScreenFrame::updateGeometry);
+    connect(m_displayInter, &DBusDisplay::PrimaryChanged, this, &FullScreenFrame::updateGeometry, Qt::QueuedConnection);
+    connect(m_displayInter, &DBusDisplay::PrimaryRectChanged, this, &FullScreenFrame::updateGeometry, Qt::QueuedConnection);
 
     connect(m_calcUtil, &CalculateUtil::layoutChanged, this, &FullScreenFrame::layoutChanged, Qt::QueuedConnection);
 
@@ -862,7 +865,7 @@ void FullScreenFrame::initConnection()
 void FullScreenFrame::showLauncher()
 {
     show();
-    setFixedSize(qApp->primaryScreen()->geometry().size());
+    setFixedSize(QSize(m_displayInter->primaryRect().width, m_displayInter->primaryRect().height)/qApp->primaryScreen()->devicePixelRatio());
 }
 
 void FullScreenFrame::hideLauncher()
@@ -877,7 +880,7 @@ bool FullScreenFrame::visible()
 
 void FullScreenFrame::updateGeometry()
 {
-    const QRect rect = qApp->primaryScreen()->geometry();
+    const QRect rect = m_displayInter->primaryRect();
 
     setGeometry(rect);
 
@@ -990,25 +993,25 @@ void FullScreenFrame::moveCurrentSelectApp(const int key)
 
 void FullScreenFrame::appendToSearchEdit(const char ch)
 {
-    m_searchWidget->edit()->setFocus(Qt::MouseFocusReason);
+    m_searchWidget->edit()->lineEdit()->setFocus(Qt::MouseFocusReason);
 
     // -1 means backspace key pressed
     if (ch == static_cast<const char>(-1)) {
-        m_searchWidget->edit()->backspace();
+        m_searchWidget->edit()->lineEdit()->backspace();
         return;
     }
 
-    if (!m_searchWidget->edit()->selectedText().isEmpty()) {
-        m_searchWidget->edit()->backspace();
+    if (!m_searchWidget->edit()->lineEdit()->selectedText().isEmpty()) {
+        m_searchWidget->edit()->lineEdit()->backspace();
     }
 
-    m_searchWidget->edit()->setText(m_searchWidget->edit()->text() + ch);
+    m_searchWidget->edit()->lineEdit()->setText(m_searchWidget->edit()->lineEdit()->text() + ch);
 }
 
 void FullScreenFrame::launchCurrentApp()
 {
     if (m_currentFocusIndex == Category) {
-        emit m_searchWidget->m_toggleCategoryBtn->clicked();
+        emit m_searchWidget->categoryBtn()->clicked();
         return;
     }
 
@@ -1411,37 +1414,32 @@ void FullScreenFrame::nextTabWidget(int key)
     if (key == Qt::Key_Tab) {
         switch (m_nextFocusIndex) {
         case Applist: {
-            m_searchWidget->m_toggleCategoryBtn->clearFocus();
+            m_searchWidget->categoryBtn()->clearFocus();
             if(m_displayMode == GROUP_BY_CATEGORY && (m_currentCategory < AppsListModel::Internet || m_currentCategory > AppsListModel::Others )) m_currentCategory = AppsListModel::Internet;
             m_appItemDelegate->setCurrentIndex(m_displayMode == GROUP_BY_CATEGORY ? categoryView(m_currentCategory)->indexAt(0) : m_allAppsView->indexAt(0));
             update();
-            m_searchWidget->m_searchEdit->normalMode();
+            m_searchWidget->edit()->lineEdit()->clearFocus();
             m_currentFocusIndex = m_nextFocusIndex;
             m_nextFocusIndex = Category;
         }
         break;
         case Category: {
-            m_searchWidget->m_toggleCategoryBtn->setFocus();
-//            m_searchWidget->m_toggleCategoryBtn->setState(DImageButton::Hover);
+            m_searchWidget->categoryBtn()->setFocus();
             m_appItemDelegate->setCurrentIndex(QModelIndex());
             m_currentFocusIndex = m_nextFocusIndex;
             m_nextFocusIndex = Search;
         }
         break;
         case Search: {
-//            m_searchWidget->m_toggleCategoryBtn->setState(DImageButton::Normal);
-            m_searchWidget->m_toggleCategoryBtn->clearFocus();
-            m_searchWidget->edit()->setFocus();
-            m_searchWidget->m_searchEdit->editMode();
+            m_searchWidget->categoryBtn()->clearFocus();
+            m_searchWidget->edit()->lineEdit()->setFocus();
             m_currentFocusIndex = m_nextFocusIndex;
             m_nextFocusIndex = Default;
         }
         break;
         case Default: {
-            m_searchWidget->edit()->clearFocus();
-            m_searchWidget->m_toggleCategoryBtn->clearFocus();
-            m_searchWidget->m_searchEdit->normalMode();
-//            m_searchWidget->m_toggleCategoryBtn->setState(DImageButton::Normal);
+            m_searchWidget->edit()->lineEdit()->clearFocus();
+            m_searchWidget->categoryBtn()->clearFocus();
             m_appItemDelegate->setCurrentIndex(QModelIndex());
             m_currentFocusIndex = m_nextFocusIndex;
             m_nextFocusIndex = Applist;
@@ -1453,34 +1451,30 @@ void FullScreenFrame::nextTabWidget(int key)
         case Applist: {
             if(m_displayMode == GROUP_BY_CATEGORY && (m_currentCategory < AppsListModel::Internet || m_currentCategory > AppsListModel::Others )) m_currentCategory = AppsListModel::Internet;
             m_appItemDelegate->setCurrentIndex(m_displayMode == GROUP_BY_CATEGORY ? categoryView(m_currentCategory)->indexAt(0) : m_allAppsView->indexAt(0));
-//            m_searchWidget->m_toggleCategoryBtn->setState(DImageButton::Normal);
             update();
-            m_searchWidget->m_toggleCategoryBtn->clearFocus();
+            m_searchWidget->categoryBtn()->clearFocus();
             m_currentFocusIndex = m_nextFocusIndex;
             m_nextFocusIndex = Default;
         }
         break;
         case Category: {
-            m_searchWidget->m_toggleCategoryBtn->setFocus();
-//            m_searchWidget->m_toggleCategoryBtn->setState(DImageButton::Hover);
-            m_searchWidget->m_searchEdit->normalMode();
+            m_searchWidget->categoryBtn()->setFocus();
+            m_searchWidget->edit()->lineEdit()->clearFocus();
             m_currentFocusIndex = m_nextFocusIndex;
             m_nextFocusIndex = Applist;
         }
         break;
         case Search: {
-            m_searchWidget->edit()->setFocus();
-            m_searchWidget->m_toggleCategoryBtn->clearFocus();
+            m_searchWidget->edit()->lineEdit()->setFocus();
+            m_searchWidget->categoryBtn()->clearFocus();
             m_appItemDelegate->setCurrentIndex(QModelIndex());
             m_currentFocusIndex = m_nextFocusIndex;
             m_nextFocusIndex = Category;
         }
         break;
         case Default: {
-            m_searchWidget->edit()->clearFocus();
-//            m_searchWidget->m_toggleCategoryBtn->setState(DImageButton::Normal);
-            m_searchWidget->m_searchEdit->normalMode();
-            m_searchWidget->m_toggleCategoryBtn->clearFocus();
+            m_searchWidget->edit()->lineEdit()->clearFocus();
+            m_searchWidget->categoryBtn()->clearFocus();
             m_appItemDelegate->setCurrentIndex(QModelIndex());
             m_currentFocusIndex = m_nextFocusIndex;
             m_nextFocusIndex = Search;

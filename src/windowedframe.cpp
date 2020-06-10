@@ -41,11 +41,15 @@
 #include <QScreen>
 #include <QEvent>
 #include <QTimer>
+#include <QScroller>
 #include <QDebug>
+
+#include <DSearchEdit>
 #include <DWindowManagerHelper>
 #include <DForeignWindow>
 #include <qpa/qplatformwindow.h>
 #include <DGuiApplicationHelper>
+#include <com_deepin_daemon_display_monitor.h>
 
 #define DOCK_TOP        0
 #define DOCK_RIGHT      1
@@ -57,14 +61,17 @@
 
 DGUI_USE_NAMESPACE
 
+using MonitorInter = com::deepin::daemon::display::Monitor;
+
 extern const QPoint widgetRelativeOffset(const QWidget *const self, const QWidget *w);
 
-inline const QPoint scaledPosition(const QPoint &xpos)
+const QPoint WindowedFrame::scaledPosition(const QPoint &xpos)
 {
     const auto ratio = qApp->devicePixelRatio();
-    QRect g = qApp->primaryScreen()->geometry();
-    for (auto *screen : qApp->screens()) {
-        const QRect &sg = screen->geometry();
+    QRect g = m_displayInter->primaryRect();
+    for (auto screen : m_displayInter->monitors()) {
+        MonitorInter *monitor = new MonitorInter("com.deepin.daemon.Display", screen.path(), QDBusConnection::sessionBus());
+        const QRect &sg = QRect(monitor->x(), monitor->y(), monitor->width(), monitor->height());
         const QRect &rg = QRect(sg.topLeft(), sg.size() * ratio);
         if (rg.contains(xpos)) {
             g = rg;
@@ -87,7 +94,7 @@ WindowedFrame::WindowedFrame(QWidget *parent)
     , m_appsView(new AppListView)
     , m_appsModel(new AppsListModel(AppsListModel::Custom))
     , m_searchModel(new AppsListModel(AppsListModel::Search))
-    , m_searchWidget(new SearchLineEdit)
+    , m_searchWidget(new DSearchEdit)
     , m_rightBar(new MiniFrameRightBar)
     , m_switchBtn(new MiniFrameSwitchBtn)
     , m_tipsLabel(new QLabel(this))
@@ -96,6 +103,7 @@ WindowedFrame::WindowedFrame(QWidget *parent)
     , m_appearanceInter(new Appearance("com.deepin.daemon.Appearance", "/com/deepin/daemon/Appearance", QDBusConnection::sessionBus(), this))
     , m_displayMode(All)
     , m_focusPos(Default)
+    , m_displayInter(new DBusDisplay(this))
 {
     setMaskColor(DBlurEffectWidget::AutoColor);
     setBlendMode(DBlurEffectWidget::InWindowBlend);
@@ -163,6 +171,7 @@ WindowedFrame::WindowedFrame(QWidget *parent)
     QHBoxLayout *searchLayout = new QHBoxLayout;
     searchLayout->addSpacing(10);
     searchLayout->addWidget(m_searchWidget);
+    DStyle::setFocusRectVisible(m_searchWidget->lineEdit(), false);
     searchLayout->addSpacing(10);
 
     QHBoxLayout *appsLayout = new QHBoxLayout;
@@ -208,6 +217,12 @@ WindowedFrame::WindowedFrame(QWidget *parent)
     initAnchoredCornor();
     installEventFilter(m_eventFilter);
 
+    QScroller::grabGesture(m_appsView->viewport(), QScroller::LeftMouseButtonGesture);
+    QScroller *scroller = QScroller::scroller(m_appsView->viewport());
+    QScrollerProperties sp;
+    sp.setScrollMetric(QScrollerProperties::VerticalOvershootPolicy, QScrollerProperties::OvershootAlwaysOff);
+    scroller->setScrollerProperties(sp);
+
     // auto scroll when drag to app list box border
     connect(m_appsView, &AppListView::requestScrollStop, m_autoScrollTimer, &QTimer::stop);
     connect(m_autoScrollTimer, &QTimer::timeout, [this] {
@@ -228,7 +243,7 @@ WindowedFrame::WindowedFrame(QWidget *parent)
     connect(m_rightBar, &MiniFrameRightBar::requestFrameHide, this, &WindowedFrame::hideLauncher, Qt::QueuedConnection);
 
     connect(m_wmHelper, &DWindowManagerHelper::hasCompositeChanged, this, &WindowedFrame::onWMCompositeChanged);
-    connect(m_searchWidget, &SearchLineEdit::textChanged, this, &WindowedFrame::searchText, Qt::QueuedConnection);
+    connect(m_searchWidget, &DSearchEdit::textChanged, this, &WindowedFrame::searchText, Qt::QueuedConnection);
     connect(m_menuWorker.get(), &MenuWorker::unInstallApp, this, static_cast<void (WindowedFrame::*)(const QModelIndex &)>(&WindowedFrame::uninstallApp));
     connect(m_menuWorker.get(), &MenuWorker::menuAccepted, m_delayHideTimer, static_cast<void (QTimer::*)()>(&QTimer::start));
     connect(m_menuWorker.get(), &MenuWorker::appLaunched, this, &WindowedFrame::hideLauncher, Qt::QueuedConnection);
@@ -257,6 +272,10 @@ WindowedFrame::WindowedFrame(QWidget *parent)
 
 WindowedFrame::~WindowedFrame()
 {
+    QScroller *scroller = QScroller::scroller(m_appsView->viewport());
+    if (scroller) {
+        scroller->stop();
+    }
     m_eventFilter->deleteLater();
 }
 
@@ -265,8 +284,8 @@ void WindowedFrame::showLauncher()
     if (visible() || m_delayHideTimer->isActive())
         return;
 
-    m_searchWidget->clear();
-    m_searchWidget->normalMode();
+    m_searchWidget->lineEdit()->clear();
+//    m_searchWidget->lineEdit()->clearFocus();
     qApp->processEvents();
 
     // force refresh
@@ -342,7 +361,7 @@ void WindowedFrame::moveCurrentSelectApp(const int key)
             m_focusPos = Search;
             m_rightBar->hideAllHoverState();
             m_rightBar->setCurrentCheck(false);
-            m_searchWidget->setFocus();
+            m_searchWidget->lineEdit()->setFocus();
             break;
         case Search:
             if (m_appsView->model()->rowCount() != 0 && m_appsView->model()->columnCount() != 0) {
@@ -387,7 +406,7 @@ void WindowedFrame::moveCurrentSelectApp(const int key)
             break;
         case Applist:
             m_focusPos = Search;
-            m_searchWidget->setFocus();
+            m_searchWidget->lineEdit()->setFocus();
             break;
         }
         break;
@@ -470,19 +489,19 @@ void WindowedFrame::moveCurrentSelectApp(const int key)
 
 void WindowedFrame::appendToSearchEdit(const char ch)
 {
-    m_searchWidget->setFocus(Qt::MouseFocusReason);
+    m_searchWidget->lineEdit()->setFocus(Qt::MouseFocusReason);
 
     // -1 means backspace key pressed
     if (ch == static_cast<const char>(-1)) {
-        m_searchWidget->backspace();
+        m_searchWidget->lineEdit()->backspace();
         return;
     }
 
-    if (!m_searchWidget->selectedText().isEmpty()) {
-        m_searchWidget->backspace();
+    if (!m_searchWidget->lineEdit()->selectedText().isEmpty()) {
+        m_searchWidget->lineEdit()->backspace();
     }
 
-    m_searchWidget->setText(m_searchWidget->text() + ch);
+    m_searchWidget->lineEdit()->setText(m_searchWidget->lineEdit()->text() + ch);
 }
 
 void WindowedFrame::launchCurrentApp()
@@ -641,14 +660,19 @@ void WindowedFrame::keyPressEvent(QKeyEvent *e)
 
         // support Ctrl+V shortcuts.
         if (!clipboardText.isEmpty()) {
-            m_searchWidget->setText(clipboardText);
-            m_searchWidget->setFocus();
+            m_searchWidget->lineEdit()->setText(clipboardText);
+            m_searchWidget->lineEdit()->setFocus();
         }
     }
 }
 
 void WindowedFrame::showEvent(QShowEvent *e)
 {
+    AppListDelegate * delegate = static_cast<AppListDelegate *>(m_appsView->itemDelegate());
+    if (delegate) {
+        delegate->setActived(true);
+    }
+
     QWidget::showEvent(e);
 
     QTimer::singleShot(1, this, [this]() {
@@ -682,8 +706,8 @@ void WindowedFrame::enterEvent(QEvent *e)
 void WindowedFrame::inputMethodEvent(QInputMethodEvent *e)
 {
     if (!e->commitString().isEmpty()) {
-        m_searchWidget->setText(e->commitString());
-        m_searchWidget->setFocus();
+        m_searchWidget->lineEdit()->setText(e->commitString());
+        m_searchWidget->lineEdit()->setFocus();
     }
 
     QWidget::inputMethodEvent(e);
@@ -695,7 +719,7 @@ QVariant WindowedFrame::inputMethodQuery(Qt::InputMethodQuery prop) const
     case Qt::ImEnabled:
         return true;
     case Qt::ImCursorRectangle:
-        return widgetRelativeOffset(this, m_searchWidget);
+        return widgetRelativeOffset(this, m_searchWidget->lineEdit());
     default: ;
     }
 
@@ -782,7 +806,7 @@ void WindowedFrame::adjustPosition()
 
     // extra spacing for efficient mode
     if (m_dockInter->displayMode() == DOCK_EFFICIENT) {
-        const QRect primaryRect = qApp->primaryScreen()->geometry();
+        const QRect primaryRect = m_displayInter->primaryRect();
 
         switch (dockPos) {
         case DOCK_TOP:
@@ -825,6 +849,11 @@ void WindowedFrame::adjustPosition()
 
 void WindowedFrame::onToggleFullScreen()
 {
+    AppListDelegate * delegate = static_cast<AppListDelegate *>(m_appsView->itemDelegate());
+    if (delegate) {
+        delegate->setActived(false);
+    }
+
 #if (DTK_VERSION >= DTK_VERSION_CHECK(2, 0, 8, 0))
     DDBusSender()
     .service("com.deepin.dde.daemon.Launcher")
@@ -863,7 +892,7 @@ void WindowedFrame::onSwitchBtnClicked()
 
     // each time press "switch btn" must hide tips label.
     hideTips();
-    m_searchWidget->clear();
+    m_searchWidget->lineEdit()->clear();
 }
 
 void WindowedFrame::onWMCompositeChanged()
