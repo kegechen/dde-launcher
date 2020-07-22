@@ -138,6 +138,7 @@ private slots:
     void searchDone(const QStringList &resultList);
     void markLaunched(QString appKey);
     void delayRefreshData();
+    bool isInQStringList(const QStringList& list, const QString& key);
 
 private:
     const ItemInfo createOfCategory(qlonglong category);
@@ -178,6 +179,7 @@ private:
     std::map<std::pair<ItemInfo, int>, int> m_notExistIconMap;
     QStringList m_categoryTs;
     QStringList m_categoryIcon;
+    QGSettings* m_filterSetting = nullptr;
 };
 
 #endif // APPSMANAGER_H

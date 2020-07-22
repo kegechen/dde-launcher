@@ -174,6 +174,19 @@ AppsManager::AppsManager(QObject *parent) :
     m_RefreshCalendarIconTimer(new QTimer(this)),
     m_lastShowDate(0)
 {
+    if (QGSettings::isSchemaInstalled("com.deepin.dde.Launcher")) {
+        m_filterSetting = new QGSettings("com.deepin.dde.Launcher", "/com/deepin/dde/Launcher/");
+        connect(m_filterSetting, &QGSettings::changed, this, [&] (const QString& keyName) {
+            if (keyName != "filter-keys" && keyName != "filterKeys") {
+                return;
+            }
+#ifdef QT_DEBUG
+            qInfo() << "--------received key changed.";
+#endif
+            refreshAllList();
+        });
+    }
+
     m_iconRefreshTimer->setInterval(10 * 1000);
     m_iconRefreshTimer->setSingleShot(false);
 
@@ -521,6 +534,16 @@ void AppsManager::delayRefreshData()
     emit dataChanged(AppsListModel::All);
 }
 
+bool AppsManager::isInQStringList(const QStringList& list, const QString& key) 
+{
+    for (const QString& l : list) {
+        if (key.indexOf(l, Qt::CaseInsensitive) != -1) {
+            return true;
+        }
+    }
+    return false;
+}
+
 const ItemInfo AppsManager::createOfCategory(qlonglong category)
 {
     ItemInfo info;
@@ -629,16 +652,41 @@ void AppsManager::refreshCategoryInfoList()
         qApp->quit();
     }
 
+    QStringList filters;
+    if (m_filterSetting != nullptr) {
+        filters = m_filterSetting->get("filter-keys").toStringList();
+#ifdef QT_DEBUG
+        qInfo() << "----------filter list: " << filters;
+#endif
+    }
+
     QByteArray readBuf = APP_USED_SORTED_LIST.value("list").toByteArray();
     QDataStream in(&readBuf, QIODevice::ReadOnly);
     in >> m_usedSortedList;
+    for(const ItemInfo& used : m_usedSortedList) {
+        bool bContains = isInQStringList(filters, used.m_key);
+        // if (filters.contains(used.m_key, Qt::CaseInsensitive)) { //这个contains有问题，找不到
+        if (bContains) {
+            bool bRemoved = m_usedSortedList.removeOne(used);
+#ifdef QT_DEBUG
+            qInfo() << "desktop: " << used.m_desktop << ", key: " << used.m_key <<", name: " << used.m_name << ", remove result: " << bRemoved;
+#endif
+        }
+    }
 
     const ItemInfoList &datas = reply.value();
     m_allAppInfoList.clear();
     m_allAppInfoList.reserve(datas.size());
     for (const auto &it : datas) {
-        if (!m_stashList.contains(it)) {
+        bool bContains = isInQStringList(filters, it.m_key);
+        // bool bContains = filters.contains(it.m_key, Qt::CaseInsensitive);  //这个contains有问题，找不到
+        if (!m_stashList.contains(it) && !bContains) {
             m_allAppInfoList.append(it);
+#ifdef QT_DEBUG
+            qDebug() << "----------add " << it.m_key;
+        } else {
+            qDebug() << "----------skip " << it.m_key;
+#endif            
         }
     }
 
@@ -720,6 +768,20 @@ void AppsManager::refreshUserInfoList()
                     m_userSortedList.append(*it);
                 }
             }
+        }
+    }
+
+    //从启动器小屏应用列表移除被限制使用的应用
+    QStringList filters;
+    if (m_filterSetting != nullptr) {
+        filters = m_filterSetting->get("filter-keys").toStringList();
+#ifdef QT_DEBUG
+        qInfo() << "----------filter list: " << filters;
+#endif
+    }
+    for (auto it=m_userSortedList.begin(); it!=m_userSortedList.end(); it++) {
+        if (isInQStringList(filters, it->m_key)) {
+            m_userSortedList.erase(it);
         }
     }
 
@@ -922,7 +984,19 @@ void AppsManager::searchDone(const QStringList &resultList)
 {
     m_appSearchResultList.clear();
 
-    for (const QString &key : resultList)
+    QStringList resultCopy = resultList;
+    if (m_filterSetting != nullptr) {
+        QStringList filters = m_filterSetting->get("filter-keys").toStringList();
+        for (const QString& result : resultCopy) {
+            bool bContains = isInQStringList(filters, result);
+            // if (filters.contains(result, Qt::CaseInsensitive)) {
+            if (bContains) {
+                resultCopy.removeAll(result);
+            }
+        }
+    }
+
+    for (const QString &key : resultCopy)
         appendSearchResult(key);
 
     emit dataChanged(AppsListModel::Search);
@@ -939,6 +1013,16 @@ void AppsManager::handleItemChanged(const QString &operation, const ItemInfo &ap
     if (operation == "created") {
         ItemInfo info = appInfo;
 
+        QStringList filters;
+        if (m_filterSetting != nullptr) {
+            filters = m_filterSetting->get("filter-keys").toStringList();
+    #ifdef QT_DEBUG
+            qInfo() << "----------filter list: " << filters;
+    #endif
+        }
+        if (isInQStringList(filters, appInfo.m_key)) {
+            return;
+        }
         m_allAppInfoList.append(info);
         m_usedSortedList.append(info);
         m_userSortedList.append(info);

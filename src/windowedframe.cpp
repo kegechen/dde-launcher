@@ -791,7 +791,7 @@ void WindowedFrame::initAnchoredCornor()
 void WindowedFrame::adjustPosition()
 {
     const int dockPos = m_dockInter->position();
-    qreal ratio = qApp->devicePixelRatio();
+    // qreal ratio = qApp->devicePixelRatio(); //未使用的变量
     QRect r =  m_dockInter->frontendRect();
     QRect dockRect = QRect(scaledPosition(r.topLeft()),scaledPosition(r.bottomRight()));
 
