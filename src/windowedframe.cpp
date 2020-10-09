@@ -263,9 +263,14 @@ WindowedFrame::WindowedFrame(QWidget *parent)
     m_modeToggleBtn->setFixedSize(40, 40);
     m_modeToggleBtn->setFocusPolicy(Qt::NoFocus);
     if (DGuiApplicationHelper::instance()->themeType() == DGuiApplicationHelper::LightType)
+    {
+        qDebug() << "/icons/skin/icons/fullscreen_normal.svg";
         m_modeToggleBtn->setIcon(QIcon(":/icons/skin/icons/fullscreen_normal.svg"));
-    else
-         m_modeToggleBtn->setIcon(QIcon(":/icons/skin/icons/fullscreen_dark.svg"));
+    } else {
+        qDebug() << "/icons/skin/icons/fullscreen_dark.svg";
+        m_modeToggleBtn->setIcon(QIcon(":/icons/skin/icons/fullscreen_dark.svg"));
+    }
+
 }
 
 WindowedFrame::~WindowedFrame()
@@ -841,17 +846,20 @@ void WindowedFrame::adjustPosition()
 void WindowedFrame::onToggleFullScreen()
 {
     //后台没有启动,切换全屏会造成后台默认数据和前台数据不统一,造成显示问题
+    qDebug() << "m_appsManager->appNums(AppsListModel::All) = " << m_appsManager->appNums(AppsListModel::All);
     if(!m_appsManager->appNums(AppsListModel::All)) {
         return;
     }
-
+    qDebug() << "onToggleFullScreen";
     AppListDelegate * delegate = static_cast<AppListDelegate *>(m_appsView->itemDelegate());
+    qDebug() << "delegate = " << delegate;
     if (delegate) {
         delegate->setActived(false);
     }
 
     m_calcUtil->setFullScreen(true);
 #if (DTK_VERSION >= DTK_VERSION_CHECK(2, 0, 8, 0))
+     qDebug() << "DDBusSender ";
     DDBusSender()
     .service("com.deepin.dde.daemon.Launcher")
     .interface("com.deepin.dde.daemon.Launcher")
